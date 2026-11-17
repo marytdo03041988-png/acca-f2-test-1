@@ -165,76 +165,149 @@ export function gradeExamAttempt(params: {
   return { attemptRecord, emailPayload };
 }
 
-const HOSTED_API_URL =
-  'https://ais-pre-fs3s6dnsvy4vr4t6cyjewj-537682758935.asia-northeast1.run.app/api/submit-result';
+const WEB3FORMS_ACCESS_KEY = 'eb6818b8-6a16-4ebd-af19-34a358e726b3';
+const DEFAULT_TEACHER_EMAIL = 'mary.tdo03041988@gmail.com';
+
+function formatSubmissionMessage(payload: SubmitResultPayload): { subject: string; text: string } {
+  const mins = Math.floor(payload.timeSpentSeconds / 60);
+  const secs = payload.timeSpentSeconds % 60;
+  const formattedDate = new Date(payload.submittedAt).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const statusLabel = payload.passed ? 'PASSED (>= 50%)' : 'NOT PASSED (< 50%)';
+
+  const chapterLines = Object.entries(payload.chapterScores || {})
+    .map(
+      ([chapter, score]) =>
+        `  - ${chapter}: ${score.scored} / ${score.total} marks (${score.percentage}%)`
+    )
+    .join('\n');
+
+  const questionLines = (payload.questionSummary || [])
+    .map(
+      (q) =>
+        `  Q${q.id} [${q.marksAwarded}/${q.maxMarks}]: ${q.title} -> ${
+          q.isCorrect ? 'CORRECT' : 'INCORRECT'
+        } (Student: ${q.userSummary} | Key: ${q.correctSummary})`
+    )
+    .join('\n');
+
+  const text = [
+    'DAW THIDA OO TRAINING CENTER — ACCA F2 TEST SUBMISSION',
+    'Daw Thida Oo Training center Internal test purpose',
+    '================================================================',
+    `Candidate Name : ${payload.studentName}`,
+    `Student ID     : ${payload.studentId}`,
+    payload.studentEmail ? `Student Email  : ${payload.studentEmail}` : null,
+    `Submitted At   : ${formattedDate}`,
+    `Time Taken     : ${mins}m ${secs}s`,
+    `Submission Via : ${payload.sourceMode || 'GitHub Pages'}`,
+    '',
+    `TOTAL SCORE    : ${payload.totalScore} / ${payload.maxScore} (${payload.percentage}%)`,
+    `RESULT STATUS  : ${statusLabel}`,
+    '',
+    'CHAPTER PERFORMANCE BREAKDOWN:',
+    chapterLines,
+    '',
+    'QUESTION-BY-QUESTION AUDIT:',
+    questionLines,
+  ]
+    .filter((line) => line !== null)
+    .join('\n');
+
+  const subject = `[ACCA F2 Result] ${payload.studentName} (${payload.studentId}) — ${payload.totalScore}/${payload.maxScore} (${payload.percentage}%) — ${statusLabel}`;
+
+  return { subject, text };
+}
+
+async function sendViaWeb3Forms(payload: SubmitResultPayload): Promise<EmailDeliveryInfo> {
+  const { subject, text } = formatSubmissionMessage(payload);
+  const mins = Math.floor(payload.timeSpentSeconds / 60);
+  const secs = payload.timeSpentSeconds % 60;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        access_key: WEB3FORMS_ACCESS_KEY,
+        subject,
+        from_name: 'Daw Thida Oo Test Portal',
+        name: payload.studentName,
+        email: payload.studentEmail || undefined,
+        'Student ID': payload.studentId,
+        'Total Score': `${payload.totalScore} / ${payload.maxScore} (${payload.percentage}%)`,
+        'Result Status': payload.passed ? 'PASSED' : 'NOT PASSED',
+        'Time Taken': `${mins}m ${secs}s`,
+        message: text,
+      }),
+      signal: controller.signal,
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return {
+        status: 'sent',
+        recipient: DEFAULT_TEACHER_EMAIL,
+      };
+    }
+
+    return {
+      status: 'failed',
+      recipient: DEFAULT_TEACHER_EMAIL,
+      reason: 'DELIVERY_ERROR',
+      message: data.message || 'Submission service could not deliver email.',
+    };
+  } catch (err: unknown) {
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    return {
+      status: 'failed',
+      recipient: DEFAULT_TEACHER_EMAIL,
+      reason: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+      message: isTimeout
+        ? 'Email request timed out. Your score was saved locally.'
+        : 'Network error delivering email. Your score was saved locally.',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function dispatchResultEmail(
   payload: SubmitResultPayload
 ): Promise<EmailDeliveryInfo> {
-  const isStaticExternal =
+  const isLocalhost =
     typeof window !== 'undefined' &&
-    (window.location.protocol === 'file:' ||
-      window.location.hostname.endsWith('github.io'));
+    (window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1');
 
-  const endpoints = isStaticExternal
-    ? [HOSTED_API_URL]
-    : ['/api/submit-result', HOSTED_API_URL];
-
-  let lastReason = 'NETWORK_ERROR';
-  let lastMessage = 'Network error while dispatching email.';
-  let lastRecipient = 'mary.tdo03041988@gmail.com';
-
-  for (const endpoint of endpoints) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
+  if (isLocalhost) {
     try {
-      const res = await fetch(endpoint, {
+      const localRes = await fetch('/api/submit-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: controller.signal,
       });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        lastReason = 'UNREACHABLE_ENDPOINT';
-        lastMessage = 'Mail endpoint did not return JSON.';
-        continue;
+      if (localRes.ok) {
+        const data = await localRes.json();
+        if (data.delivered) {
+          return {
+            status: 'sent',
+            recipient: data.recipient || DEFAULT_TEACHER_EMAIL,
+          };
+        }
       }
-
-      const data = await res.json();
-      lastRecipient = data.recipient || lastRecipient;
-
-      if (res.ok && data.delivered) {
-        return {
-          status: 'sent',
-          recipient: lastRecipient,
-        };
-      }
-
-      return {
-        status: 'failed',
-        recipient: lastRecipient,
-        reason: data.reason || 'DELIVERY_ERROR',
-        message:
-          data.message || 'Could not send automatic email right now.',
-      };
-    } catch (err: unknown) {
-      const isTimeout = err instanceof Error && err.name === 'AbortError';
-      lastReason = isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR';
-      lastMessage = isTimeout
-        ? 'Email request timed out. Your score was still saved locally.'
-        : 'Offline or unreachable mail server. Your score was saved locally.';
-    } finally {
-      clearTimeout(timeoutId);
+    } catch {
+      // Local server not running or error, proceed to Web3Forms
     }
   }
 
-  return {
-    status: 'failed',
-    recipient: lastRecipient,
-    reason: lastReason,
-    message: lastMessage,
-  };
+  return await sendViaWeb3Forms(payload);
 }

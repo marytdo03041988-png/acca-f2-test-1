@@ -148,10 +148,8 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
               <div className="flex items-start gap-2.5 flex-1 min-w-[200px]">
                 <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold">Automatic email delivery pending.</span>{' '}
-                  {emailDelivery.reason === 'SMTP_NOT_CONFIGURED'
-                    ? 'Your score was saved locally, and the instructor needs to configure the SMTP_PASS secret in AI Studio Secrets for automatic email delivery.'
-                    : emailDelivery.message || 'Could not reach the mail server right now.'}
+                  <span className="font-bold">Automatic email delivery notice:</span>{' '}
+                  {emailDelivery.message || 'Your score was saved locally. You can print your summary or retry auto-send.'}
                 </div>
               </div>
               <button
