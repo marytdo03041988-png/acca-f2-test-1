@@ -165,48 +165,76 @@ export function gradeExamAttempt(params: {
   return { attemptRecord, emailPayload };
 }
 
+const HOSTED_API_URL =
+  'https://ais-pre-fs3s6dnsvy4vr4t6cyjewj-537682758935.asia-northeast1.run.app/api/submit-result';
+
 export async function dispatchResultEmail(
   payload: SubmitResultPayload
 ): Promise<EmailDeliveryInfo> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const isStaticExternal =
+    typeof window !== 'undefined' &&
+    (window.location.protocol === 'file:' ||
+      window.location.hostname.endsWith('github.io'));
 
-  try {
-    const res = await fetch('/api/submit-result', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+  const endpoints = isStaticExternal
+    ? [HOSTED_API_URL]
+    : ['/api/submit-result', HOSTED_API_URL];
 
-    const data = await res.json();
+  let lastReason = 'NETWORK_ERROR';
+  let lastMessage = 'Network error while dispatching email.';
+  let lastRecipient = 'mary.tdo03041988@gmail.com';
 
-    if (res.ok && data.delivered) {
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        lastReason = 'UNREACHABLE_ENDPOINT';
+        lastMessage = 'Mail endpoint did not return JSON.';
+        continue;
+      }
+
+      const data = await res.json();
+      lastRecipient = data.recipient || lastRecipient;
+
+      if (res.ok && data.delivered) {
+        return {
+          status: 'sent',
+          recipient: lastRecipient,
+        };
+      }
+
       return {
-        status: 'sent',
-        recipient: data.recipient || 'mary.tdo03041988@gmail.com',
+        status: 'failed',
+        recipient: lastRecipient,
+        reason: data.reason || 'DELIVERY_ERROR',
+        message:
+          data.message || 'Could not send automatic email right now.',
       };
-    }
-
-    return {
-      status: 'failed',
-      recipient: data.recipient || 'mary.tdo03041988@gmail.com',
-      reason: data.reason || 'DELIVERY_ERROR',
-      message:
-        data.message ||
-        'Could not send automatic email right now.',
-    };
-  } catch (err: unknown) {
-    const isTimeout = err instanceof Error && err.name === 'AbortError';
-    return {
-      status: 'failed',
-      recipient: 'mary.tdo03041988@gmail.com',
-      reason: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
-      message: isTimeout
+    } catch (err: unknown) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      lastReason = isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR';
+      lastMessage = isTimeout
         ? 'Email request timed out. Your score was still saved locally.'
-        : 'Network error while dispatching email.',
-    };
-  } finally {
-    clearTimeout(timeoutId);
+        : 'Offline or unreachable mail server. Your score was saved locally.';
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+
+  return {
+    status: 'failed',
+    recipient: lastRecipient,
+    reason: lastReason,
+    message: lastMessage,
+  };
 }

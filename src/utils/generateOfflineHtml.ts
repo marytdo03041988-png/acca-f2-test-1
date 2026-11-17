@@ -1,9 +1,9 @@
 import { EXAM_QUESTIONS } from '../data/questions';
 
-export function downloadStandaloneOfflineHtml(): void {
+export function buildStandaloneOfflineHtml(): string {
   const questionsJson = JSON.stringify(EXAM_QUESTIONS);
 
-  const htmlContent = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -934,10 +934,12 @@ export function downloadStandaloneOfflineHtml(): void {
     function updateMultiTask(qId, partId, val) {
       if (!answers[qId]) answers[qId] = {};
       if (!answers[qId].multiTaskAnswers) answers[qId].multiTaskAnswers = {};
-      answers[qId].multiTaskAnswers[partId] = val.replace(/[^0-9.-]/g, '').length > 0 && QUESTIONS[currentIdx].multiTaskParts.find(p => p.id === partId).type === 'number-input'
-        ? val.replace(/[^0-9.-]/g, '')
-        : val;
       const q = QUESTIONS[currentIdx];
+      const partObj = (q.multiTaskParts || []).find(p => p.id === partId);
+      answers[qId].multiTaskAnswers[partId] =
+        partObj && partObj.type === 'number-input'
+          ? val.replace(/[^0-9.-]/g, '')
+          : val;
       const answered = isQuestionAnswered(q);
       document.getElementById('footerStatus').innerHTML =
         '<strong class="font-mono">' + q.marks + ' marks</strong> · ' +
@@ -1074,12 +1076,32 @@ export function downloadStandaloneOfflineHtml(): void {
       }
     }
 
-    async function sendEmailToBackend(payload) {
-      setDeliveryBanner('sending');
-      const primaryUrl = window.location.protocol.startsWith('http')
-        ? window.location.origin + '/api/submit-result'
-        : FALLBACK_API_URL;
-      const urlsToTry = primaryUrl === FALLBACK_API_URL ? [FALLBACK_API_URL] : [primaryUrl, FALLBACK_API_URL];
+    function queuePendingEmail(payload) {
+      try {
+        const queue = JSON.parse(localStorage.getItem('tdo_pending_email_queue') || '[]');
+        const exists = queue.some(item => item.submittedAt === payload.submittedAt && item.studentId === payload.studentId);
+        if (!exists) {
+          queue.push(payload);
+          localStorage.setItem('tdo_pending_email_queue', JSON.stringify(queue.slice(-20)));
+        }
+      } catch (e) {}
+    }
+
+    function removePendingEmail(payload) {
+      try {
+        const queue = JSON.parse(localStorage.getItem('tdo_pending_email_queue') || '[]');
+        const filtered = queue.filter(item => !(item.submittedAt === payload.submittedAt && item.studentId === payload.studentId));
+        localStorage.setItem('tdo_pending_email_queue', JSON.stringify(filtered));
+      } catch (e) {}
+    }
+
+    async function postPayloadOnce(payload) {
+      const isStaticExternal =
+        !window.location.protocol.startsWith('http') ||
+        window.location.hostname.endsWith('github.io');
+      const urlsToTry = isStaticExternal
+        ? [FALLBACK_API_URL]
+        : [window.location.origin + '/api/submit-result', FALLBACK_API_URL];
 
       let lastErrMsg = 'Could not reach the mail server right now.';
       for (let i = 0; i < urlsToTry.length; i++) {
@@ -1093,18 +1115,51 @@ export function downloadStandaloneOfflineHtml(): void {
             signal: controller.signal,
           });
           clearTimeout(tid);
+          const ctype = res.headers.get('content-type') || '';
+          if (!ctype.includes('application/json')) continue;
           const data = await res.json();
           if (res.ok && data.delivered) {
-            setDeliveryBanner('sent', data);
-            return;
+            return { delivered: true, data: data };
           }
           lastErrMsg = data.message || lastErrMsg;
         } catch (err) {
-          lastErrMsg = 'Offline or unreachable mail server. Connect to internet and click Retry Auto-Send.';
+          lastErrMsg = 'Offline or unreachable mail server. Your score is saved locally and will send when connected.';
         }
       }
-      setDeliveryBanner('failed', { message: lastErrMsg });
+      return { delivered: false, message: lastErrMsg };
     }
+
+    async function sendEmailToBackend(payload) {
+      setDeliveryBanner('sending');
+      const result = await postPayloadOnce(payload);
+      if (result.delivered) {
+        removePendingEmail(payload);
+        setDeliveryBanner('sent', result.data);
+      } else {
+        queuePendingEmail(payload);
+        setDeliveryBanner('failed', { message: result.message });
+      }
+    }
+
+    async function flushPendingEmails() {
+      if (!navigator.onLine) return;
+      try {
+        const queue = JSON.parse(localStorage.getItem('tdo_pending_email_queue') || '[]');
+        if (!queue.length) return;
+        for (let i = 0; i < queue.length; i++) {
+          const item = queue[i];
+          const res = await postPayloadOnce(item);
+          if (res.delivered) {
+            removePendingEmail(item);
+            if (lastEmailPayload && lastEmailPayload.submittedAt === item.submittedAt) {
+              setDeliveryBanner('sent', res.data);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    window.addEventListener('online', flushPendingEmails);
 
     function retryAutoSend() {
       if (lastEmailPayload) {
@@ -1338,10 +1393,14 @@ export function downloadStandaloneOfflineHtml(): void {
     }
 
     updateHistoryCount();
+    flushPendingEmails();
   </script>
 </body>
 </html>`;
+}
 
+export function downloadStandaloneOfflineHtml(): void {
+  const htmlContent = buildStandaloneOfflineHtml();
   const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
