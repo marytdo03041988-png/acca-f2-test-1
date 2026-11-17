@@ -10,7 +10,6 @@ import {
 } from './types/exam';
 import { getSavedAttempts, saveExamAttempt } from './utils/storage';
 import { gradeExamAttempt, dispatchResultEmail } from './utils/examSubmission';
-import { downloadStandaloneOfflineHtml } from './utils/generateOfflineHtml';
 import { InstructionScreen } from './components/InstructionScreen';
 import { CbeHeader } from './components/CbeHeader';
 import { CbeFooter } from './components/CbeFooter';
@@ -63,7 +62,6 @@ export default function App() {
   const [isNavigatorOpen, setIsNavigatorOpen] = useState<boolean>(false);
   const [isFormulaeOpen, setIsFormulaeOpen] = useState<boolean>(false);
   const [isReviewOpen, setIsReviewOpen] = useState<boolean>(false);
-  const [isDownloadingHtml, setIsDownloadingHtml] = useState<boolean>(false);
 
   // Results & Automatic Email Delivery State
   const [latestResult, setLatestResult] = useState<ExamAttemptRecord | null>(null);
@@ -211,15 +209,6 @@ export default function App() {
     setEmailDelivery(deliveryResult);
   };
 
-  const handleDownloadOfflineHtml = () => {
-    setIsDownloadingHtml(true);
-    try {
-      downloadStandaloneOfflineHtml();
-    } finally {
-      setTimeout(() => setIsDownloadingHtml(false), 800);
-    }
-  };
-
   const handleRetake = () => {
     setAnswers({});
     setTimeRemaining(TOTAL_TIME);
@@ -246,8 +235,6 @@ export default function App() {
         <InstructionScreen
           onStartExam={handleStartExam}
           pastAttempts={pastAttempts}
-          onDownloadOfflineHtml={handleDownloadOfflineHtml}
-          isDownloadingHtml={isDownloadingHtml}
         />
       )}
 

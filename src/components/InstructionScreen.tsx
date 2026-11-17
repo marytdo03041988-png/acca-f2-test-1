@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 import {
   Clock,
-  Award,
   BookOpen,
-  Calculator,
-  Download,
   History,
   AlertCircle,
   FileCheck2,
@@ -15,15 +12,11 @@ import { ExamAttemptRecord } from '../types/exam';
 interface InstructionScreenProps {
   onStartExam: (studentName: string, studentId: string) => void;
   pastAttempts: ExamAttemptRecord[];
-  onDownloadOfflineHtml: () => void;
-  isDownloadingHtml: boolean;
 }
 
 export const InstructionScreen: React.FC<InstructionScreenProps> = ({
   onStartExam,
   pastAttempts,
-  onDownloadOfflineHtml,
-  isDownloadingHtml,
 }) => {
   const [studentName, setStudentName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -226,7 +219,7 @@ export const InstructionScreen: React.FC<InstructionScreenProps> = ({
               </form>
             </div>
 
-            {/* Utility Card: Progress Tracker & Standalone Download */}
+            {/* Utility Card: Progress Tracker */}
             <div className="bg-white rounded-lg border border-slate-300 p-4 shadow-xs space-y-3">
               <div className="text-xs font-bold text-slate-900 flex items-center justify-between">
                 <span>Student Practice Tools</span>
@@ -235,33 +228,14 @@ export const InstructionScreen: React.FC<InstructionScreenProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {/* Past Attempts Button */}
-                <button
-                  type="button"
-                  onClick={() => setShowHistoryModal(true)}
-                  className="flex items-center justify-center gap-1.5 p-2.5 border border-slate-300 rounded hover:bg-slate-50 text-slate-700 font-semibold transition cursor-pointer"
-                >
-                  <History className="w-4 h-4 text-blue-600" />
-                  <span>Score History ({pastAttempts.length})</span>
-                </button>
-
-                {/* Download Standalone HTML Button */}
-                <button
-                  type="button"
-                  onClick={onDownloadOfflineHtml}
-                  disabled={isDownloadingHtml}
-                  className="flex items-center justify-center gap-1.5 p-2.5 border border-slate-300 rounded hover:bg-slate-50 text-slate-700 font-semibold transition cursor-pointer"
-                  title="Download standalone offline HTML file with responsive mobile layout"
-                >
-                  <Download className="w-4 h-4 text-emerald-600" />
-                  <span>{isDownloadingHtml ? 'Generating...' : 'Download HTML'}</span>
-                </button>
-              </div>
-
-              <p className="text-[11px] text-slate-500 text-center leading-normal">
-                Downloadable HTML operates 100% offline on any phone or desktop without internet.
-              </p>
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(true)}
+                className="w-full flex items-center justify-center gap-1.5 p-2.5 border border-slate-300 rounded hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer"
+              >
+                <History className="w-4 h-4 text-blue-600" />
+                <span>Score History ({pastAttempts.length})</span>
+              </button>
             </div>
           </div>
         </div>

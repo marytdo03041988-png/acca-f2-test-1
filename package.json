@@ -7,7 +7,6 @@
     "dev": "tsx server.ts",
     "start": "node server.ts",
     "build": "vite build",
-    "build:offline": "tsx scripts/build-offline.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
