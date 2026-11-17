@@ -1,0 +1,6 @@
+{
+  "name": "ACCA F2 Management Accounting Test - Daw Thida Oo Training Center",
+  "description": "Interactive ACCA F2 Management Accounting computer-based practice test covering Material, Labor, Overheads, Absorption & Marginal Costing, and Job & Service Costing with authentic CBE interface, Pearson calculator, and local progress tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
